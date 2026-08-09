@@ -19,6 +19,9 @@ CODEOWNERS = ["@DavidvtWout"]
 
 AUTO_LOAD = ["network"]
 
+# Only for matter-over-thread
+MIN_ESPHOME_VERSION = "2026.6.0"
+
 # Matter spec section 5.1.7.1: these passcodes are explicitly forbidden.
 _FORBIDDEN_PASSCODES = {
     11111111, 22222222, 33333333, 44444444, 55555555,
@@ -126,11 +129,13 @@ CONFIG_SCHEMA = cv.All(
 
 def _final_validate(_):
     full_config = fv.full_config.get()
+    if "openthread" in full_config:
+        cv.validate_esphome_version(MIN_ESPHOME_VERSION)
+
     network_config = full_config.get("network", {})
     if not network_config.get(CONF_ENABLE_IPV6, False):
         raise cv.Invalid(
-            "Matter requires IPv6 to be enabled in the network component (technically IPv4-only matter-over-wifi"
-            "should be possible but the spec forbids this and the connectedhomeip project doesn't support this). "
+            "Matter requires IPv6 to be enabled in the network component. "
             "Please set `enable_ipv6: true` in the `network` configuration."
         )
 
@@ -141,9 +146,8 @@ FINAL_VALIDATE_SCHEMA = _final_validate
 # to set it after that to prevent this platformio option from being overwritten.
 @coroutine_with_priority(CoroPriority.FINAL - 1)
 async def _set_executable_component_name():
-    # esp_matter's CMakeLists.txt defaults EXECUTABLE_COMPONENT_NAME to "main", but ESPHome names the app component
-    # "src". The CMake hook trims esp-matter's hardware Ethernet sources while keeping the CHIP Ethernet
-    # commissioning driver type available through matter_ethernet_stub.cpp.
+    # esp_matter's CMakeLists.txt defaults EXECUTABLE_COMPONENT_NAME to "main", but ESPHome names
+    # the app component "src".
     if CORE.using_toolchain_platformio:
         key = "board_build.cmake_extra_args"
         value = CORE.platformio_options.get(key, "")
@@ -267,6 +271,12 @@ async def to_code(config):
         # back to BlueTooth (BLE) commissioning (the default for most matter devices). In this mode, the device can be
         # commissioned as matter-over-thread or matter-over-wifi device depending on the hardware capabilities of the
         # device. If the device supports both, it can be commissioned in either mode.
+
+        # TODO: only enable if device supports it
+        add_idf_sdkconfig_option("CONFIG_OPENTHREAD_ENABLED", True)
+        add_idf_sdkconfig_option("CONFIG_OPENTHREAD_CLI", False)
+        add_idf_sdkconfig_option("CONFIG_OPENTHREAD_CONSOLE_ENABLE", False)
+        add_idf_sdkconfig_option("CONFIG_OPENTHREAD_SRP_CLIENT", True)
 
         # TODO: use CORE.data?
         add_idf_sdkconfig_option("CONFIG_BT_ENABLED", True)
